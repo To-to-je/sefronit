@@ -1,2 +1,0 @@
-# sefronit
-My portfolio website
