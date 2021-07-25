@@ -864,9 +864,7 @@ a:focus {
 	content: "\f212";
 }
 
-.social-navigation a[href*="wordpress.com"]:before,
-.social-navigation a[href*="wordpress.org"]:before {
-	content: "\f205";
+
 }
 
 .social-navigation a[href*="youtube.com"]:before {

@@ -30,7 +30,7 @@
 			<a href="<?php echo esc_url( __( 'https://wordpress.org/', 'twentyfifteen' ) ); ?>" class="imprint">
 				<?php
 				/* translators: %s: WordPress */
-				printf( __( 'Proudly powered by %s', 'twentyfifteen' ), 'WordPress' );
+				
 				?>
 			</a>
 		</div><!-- .site-info -->
