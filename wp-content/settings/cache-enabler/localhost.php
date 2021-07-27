@@ -5,12 +5,12 @@
  * @since      1.5.0
  * @change     1.5.0
  *
- * @generated  Tue, 27 Jul 2021 01:34:22 GMT
+ * @generated  Tue, 27 Jul 2021 01:48:40 GMT
  */
 
 return array (
   'version' => '1.7.2',
-  'permalink_structure' => 'plain',
+  'permalink_structure' => 'has_trailing_slash',
   'cache_expires' => 0,
   'cache_expiry_time' => 0,
   'clear_site_cache_on_saved_post' => 0,
