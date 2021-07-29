@@ -53,9 +53,7 @@ abstract class DB_Upgrades_Manager extends Background_Task_Manager {
 	public function on_runner_start() {
 		parent::on_runner_start();
 
-		if ( ! defined( 'IS_ELEMENTOR_UPGRADE' ) ) {
-			define( 'IS_ELEMENTOR_UPGRADE', true );
-		}
+		define( 'IS_ELEMENTOR_UPGRADE', true );
 	}
 
 	public function on_runner_complete( $did_tasks = false ) {
@@ -186,12 +184,6 @@ abstract class DB_Upgrades_Manager extends Background_Task_Manager {
 
 		foreach ( $upgrades_reflection->getMethods() as $method ) {
 			$method_name = $method->getName();
-
-			if ( '_on_each_version' === $method_name ) {
-				$callbacks[] = [ $upgrades_class, $method_name ];
-				continue;
-			}
-
 			if ( false === strpos( $method_name, $prefix ) ) {
 				continue;
 			}

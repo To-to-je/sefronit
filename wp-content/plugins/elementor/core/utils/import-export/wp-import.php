@@ -67,7 +67,6 @@ class WP_Import extends \WP_Importer {
 	private $categories = [];
 	private $tags = [];
 	private $base_url = '';
-	private $page_on_front;
 
 	// Mappings from old information to new.
 	private $processed_authors = [];
@@ -199,7 +198,7 @@ class WP_Import extends \WP_Importer {
 		$this->set_author_mapping();
 
 		wp_suspend_cache_invalidation( true );
-		$imported_summary = [
+		$imported_summery = [
 			'categories' => $this->process_categories(),
 			'tags' => $this->process_tags(),
 			'terms' => $this->process_terms(),
@@ -215,7 +214,7 @@ class WP_Import extends \WP_Importer {
 		$this->import_end();
 
 		$is_some_succeed = false;
-		foreach ( $imported_summary as $item ) {
+		foreach ( $imported_summery as $item ) {
 			if ( $item > 0 ) {
 				$is_some_succeed = true;
 				break;
@@ -224,7 +223,7 @@ class WP_Import extends \WP_Importer {
 
 		if ( $is_some_succeed ) {
 			$this->output['status'] = 'success';
-			$this->output['summary'] = $imported_summary;
+			$this->output['summary'] = $imported_summery;
 		}
 	}
 
@@ -255,7 +254,6 @@ class WP_Import extends \WP_Importer {
 		$this->categories = $import_data['categories'];
 		$this->tags = $import_data['tags'];
 		$this->base_url = esc_url( $import_data['base_url'] );
-		$this->page_on_front = $import_data['page_on_front'];
 
 		wp_defer_term_counting( true );
 		wp_defer_comment_counting( true );
@@ -344,7 +342,7 @@ class WP_Import extends \WP_Importer {
 				$user_id = 0;
 				if ( ! empty( $this->args['user_new'][ $i ] ) ) {
 					$user_id = wp_create_user( $this->args['user_new'][ $i ], wp_generate_password() );
-				} elseif ( '1.0' !== $this->version ) {
+				} elseif ( '1.0' != $this->version ) {
 					$user_data = [
 						'user_login' => $old_login,
 						'user_pass' => wp_generate_password(),
@@ -641,13 +639,10 @@ class WP_Import extends \WP_Importer {
 	 * is already noted as imported or a post with the same title and date already exists.
 	 * Note that new/updated terms, comments and meta are imported for the last of the above.
 	 *
-	 * @return array the ids of succeed/failed imported posts.
+	 * @return int number of imported posts.
 	 */
 	private function process_posts() {
-		$result = [
-			'succeed' => [],
-			'failed' => [],
-		];
+		$result = 0;
 
 		$this->posts = apply_filters( 'wp_import_posts', $this->posts );
 
@@ -664,106 +659,126 @@ class WP_Import extends \WP_Importer {
 				continue;
 			}
 
-			if ( 'auto-draft' === $post['status'] ) {
+			if ( 'auto-draft' == $post['status'] ) {
 				continue;
 			}
 
-			if ( 'nav_menu_item' === $post['post_type'] ) {
+			if ( 'nav_menu_item' == $post['post_type'] ) {
 				$this->process_menu_item( $post );
 				continue;
 			}
 
 			$post_type_object = get_post_type_object( $post['post_type'] );
 
-			$post_parent = (int) $post['post_parent'];
-			if ( $post_parent ) {
-				// if we already know the parent, map it to the new local ID.
-				if ( isset( $this->processed_posts[ $post_parent ] ) ) {
-					$post_parent = $this->processed_posts[ $post_parent ];
-					// otherwise record the parent for later.
-				} else {
-					$this->post_orphans[ intval( $post['post_id'] ) ] = $post_parent;
-					$post_parent = 0;
-				}
-			}
+			$post_exists = post_exists( $post['post_title'], '', $post['post_date'] );
 
-			// Map the post author.
-			$author = sanitize_user( $post['post_author'], true );
-			if ( isset( $this->author_mapping[ $author ] ) ) {
-				$author = $this->author_mapping[ $author ];
+			/**
+			 * Filter ID of the existing post corresponding to post currently importing.
+			 *
+			 * Return 0 to force the post to be imported. Filter the ID to be something else
+			 * to override which existing post is mapped to the imported post.
+			 *
+			 * @param int   $post_exists Post ID, or 0 if post did not exist.
+			 * @param array $post        The post array to be inserted.
+			 *
+			 * @see post_exists()
+			 */
+			$post_exists = apply_filters( 'wp_import_existing_post', $post_exists, $post );
+
+			if ( $post_exists && get_post_type( $post_exists ) == $post['post_type'] ) {
+				$this->output['errors'][] = sprintf( __( '%1$s %2$s already exists.', 'elementor' ), $post_type_object->labels->singular_name, $post['post_title'] );
+
+				$post_id = $post_exists;
+				$comment_post_id = $post_id;
+
+				$this->processed_posts[ intval( $post['post_id'] ) ] = intval( $post_exists );
 			} else {
-				$author = (int) get_current_user_id();
-			}
-
-			$postdata = [
-				'import_id' => $post['post_id'],
-				'post_author' => $author,
-				'post_content' => $post['post_content'],
-				'post_excerpt' => $post['post_excerpt'],
-				'post_title' => $post['post_title'],
-				'post_status' => $post['status'],
-				'post_name' => $post['post_name'],
-				'comment_status' => $post['comment_status'],
-				'ping_status' => $post['ping_status'],
-				'guid' => $post['guid'],
-				'post_parent' => $post_parent,
-				'menu_order' => $post['menu_order'],
-				'post_type' => $post['post_type'],
-				'post_password' => $post['post_password'],
-			];
-
-			$original_post_id = $post['post_id'];
-			$postdata = apply_filters( 'wp_import_post_data_processed', $postdata, $post );
-
-			$postdata = wp_slash( $postdata );
-
-			if ( 'attachment' === $postdata['post_type'] ) {
-				$remote_url = ! empty( $post['attachment_url'] ) ? $post['attachment_url'] : $post['guid'];
-
-				// try to use _wp_attached file for upload folder placement to ensure the same location as the export site
-				// e.g. location is 2003/05/image.jpg but the attachment post_date is 2010/09, see media_handle_upload()
-				$postdata['upload_date'] = $post['post_date'];
-				if ( isset( $post['postmeta'] ) ) {
-					foreach ( $post['postmeta'] as $meta ) {
-						if ( '_wp_attached_file' === $meta['key'] ) {
-							if ( preg_match( '%^[0-9]{4}/[0-9]{2}%', $meta['value'], $matches ) ) {
-								$postdata['upload_date'] = $matches[0];
-							}
-							break;
-						}
+				$post_parent = (int) $post['post_parent'];
+				if ( $post_parent ) {
+					// if we already know the parent, map it to the new local ID.
+					if ( isset( $this->processed_posts[ $post_parent ] ) ) {
+						$post_parent = $this->processed_posts[ $post_parent ];
+						// otherwise record the parent for later.
+					} else {
+						$this->post_orphans[ intval( $post['post_id'] ) ] = $post_parent;
+						$post_parent = 0;
 					}
 				}
 
-				$post_id = $this->process_attachment( $postdata, $remote_url );
-				$comment_post_id = $post_id;
-			} else {
-				$post_id = wp_insert_post( $postdata, true );
-				$comment_post_id = $post_id;
-				do_action( 'wp_import_insert_post', $post_id, $original_post_id, $postdata, $post );
-			}
-
-			if ( is_wp_error( $post_id ) ) {
-				$error = sprintf( __( 'Failed to import %1$s %2$s', 'elementor' ), $post_type_object->labels->singular_name, $post['post_title'] );
-
-				if ( defined( 'IMPORT_DEBUG' ) && IMPORT_DEBUG ) {
-					$error .= PHP_EOL . $post_id->get_error_message();
+				// Map the post author.
+				$author = sanitize_user( $post['post_author'], true );
+				if ( isset( $this->author_mapping[ $author ] ) ) {
+					$author = $this->author_mapping[ $author ];
+				} else {
+					$author = (int) get_current_user_id();
 				}
 
-				$result['failed'][] = $original_post_id;
+				$postdata = [
+					'import_id' => $post['post_id'],
+					'post_author' => $author,
+					'post_date' => $post['post_date'],
+					'post_date_gmt' => $post['post_date_gmt'],
+					'post_content' => $post['post_content'],
+					'post_excerpt' => $post['post_excerpt'],
+					'post_title' => $post['post_title'],
+					'post_status' => $post['status'],
+					'post_name' => $post['post_name'],
+					'comment_status' => $post['comment_status'],
+					'ping_status' => $post['ping_status'],
+					'guid' => $post['guid'],
+					'post_parent' => $post_parent,
+					'menu_order' => $post['menu_order'],
+					'post_type' => $post['post_type'],
+					'post_password' => $post['post_password'],
+				];
 
-				$this->output['errors'][] = $error;
+				$original_post_id = $post['post_id'];
+				$postdata = apply_filters( 'wp_import_post_data_processed', $postdata, $post );
 
-				continue;
-			}
+				$postdata = wp_slash( $postdata );
 
-			$result['succeed'][ $original_post_id ] = $post_id;
+				if ( 'attachment' == $postdata['post_type'] ) {
+					$remote_url = ! empty( $post['attachment_url'] ) ? $post['attachment_url'] : $post['guid'];
 
-			if ( 1 === $post['is_sticky'] ) {
-				stick_post( $post_id );
-			}
+					// try to use _wp_attached file for upload folder placement to ensure the same location as the export site
+					// e.g. location is 2003/05/image.jpg but the attachment post_date is 2010/09, see media_handle_upload()
+					$postdata['upload_date'] = $post['post_date'];
+					if ( isset( $post['postmeta'] ) ) {
+						foreach ( $post['postmeta'] as $meta ) {
+							if ( '_wp_attached_file' == $meta['key'] ) {
+								if ( preg_match( '%^[0-9]{4}/[0-9]{2}%', $meta['value'], $matches ) ) {
+									$postdata['upload_date'] = $matches[0];
+								}
+								break;
+							}
+						}
+					}
 
-			if ( $this->page_on_front === $original_post_id ) {
-				update_option( 'page_on_front', $post_id );
+					$post_id = $this->process_attachment( $postdata, $remote_url );
+					$comment_post_id = $post_id;
+				} else {
+					$post_id = wp_insert_post( $postdata, true );
+					$comment_post_id = $post_id;
+					do_action( 'wp_import_insert_post', $post_id, $original_post_id, $postdata, $post );
+				}
+
+				if ( is_wp_error( $post_id ) ) {
+					$error = sprintf( __( 'Failed to import %1$s %2$s', 'elementor' ), $post_type_object->labels->singular_name, $post['post_title'] );
+
+					if ( defined( 'IMPORT_DEBUG' ) && IMPORT_DEBUG ) {
+						$error .= PHP_EOL . $post_id->get_error_message();
+					}
+
+					$this->output['errors'][] = $error;
+
+					continue;
+				}
+
+				$result++;
+
+				if ( 1 == $post['is_sticky'] ) {
+					stick_post( $post_id );
+				}
 			}
 
 			// Map pre-import ID to local ID.
@@ -780,7 +795,7 @@ class WP_Import extends \WP_Importer {
 				$terms_to_set = [];
 				foreach ( $post['terms'] as $term ) {
 					// back compat with WXR 1.0 map 'tag' to 'post_tag'
-					$taxonomy = ( 'tag' === $term['domain'] ) ? 'post_tag' : $term['domain'];
+					$taxonomy = ( 'tag' == $term['domain'] ) ? 'post_tag' : $term['domain'];
 					$term_exists = term_exists( $term['slug'], $taxonomy );
 					$term_id = is_array( $term_exists ) ? $term_exists['term_id'] : $term_exists;
 					if ( ! $term_id ) {
@@ -843,25 +858,28 @@ class WP_Import extends \WP_Importer {
 				ksort( $newcomments );
 
 				foreach ( $newcomments as $key => $comment ) {
-					if ( isset( $inserted_comments[ $comment['comment_parent'] ] ) ) {
-						$comment['comment_parent'] = $inserted_comments[ $comment['comment_parent'] ];
+					// if this is a new post we can skip the comment_exists() check
+					if ( ! $post_exists || ! comment_exists( $comment['comment_author'], $comment['comment_date'] ) ) {
+						if ( isset( $inserted_comments[ $comment['comment_parent'] ] ) ) {
+							$comment['comment_parent'] = $inserted_comments[ $comment['comment_parent'] ];
+						}
+
+						$comment_data = wp_slash( $comment );
+						unset( $comment_data['commentmeta'] ); // Handled separately, wp_insert_comment() also expects `comment_meta`.
+						$comment_data = wp_filter_comment( $comment_data );
+
+						$inserted_comments[ $key ] = wp_insert_comment( $comment_data );
+
+						do_action( 'wp_import_insert_comment', $inserted_comments[ $key ], $comment, $comment_post_id, $post );
+
+						foreach ( $comment['commentmeta'] as $meta ) {
+							$value = maybe_unserialize( $meta['value'] );
+
+							add_comment_meta( $inserted_comments[ $key ], wp_slash( $meta['key'] ), wp_slash_strings_only( $value ) );
+						}
+
+						$num_comments++;
 					}
-
-					$comment_data = wp_slash( $comment );
-					unset( $comment_data['commentmeta'] ); // Handled separately, wp_insert_comment() also expects `comment_meta`.
-					$comment_data = wp_filter_comment( $comment_data );
-
-					$inserted_comments[ $key ] = wp_insert_comment( $comment_data );
-
-					do_action( 'wp_import_insert_comment', $inserted_comments[ $key ], $comment, $comment_post_id, $post );
-
-					foreach ( $comment['commentmeta'] as $meta ) {
-						$value = maybe_unserialize( $meta['value'] );
-
-						add_comment_meta( $inserted_comments[ $key ], wp_slash( $meta['key'] ), wp_slash_strings_only( $value ) );
-					}
-
-					$num_comments++;
 				}
 				unset( $newcomments, $inserted_comments, $post['comments'] );
 			}
@@ -878,7 +896,7 @@ class WP_Import extends \WP_Importer {
 					$key = apply_filters( 'import_post_meta_key', $meta['key'], $post_id, $post );
 					$value = false;
 
-					if ( '_edit_last' === $key ) {
+					if ( '_edit_last' == $key ) {
 						if ( isset( $this->processed_authors[ intval( $meta['value'] ) ] ) ) {
 							$value = $this->processed_authors[ intval( $meta['value'] ) ];
 						} else {
@@ -897,7 +915,7 @@ class WP_Import extends \WP_Importer {
 						do_action( 'import_post_meta', $post_id, $key, $value );
 
 						// If the post has a featured image, take note of this in case of remap.
-						if ( '_thumbnail_id' === $key ) {
+						if ( '_thumbnail_id' == $key ) {
 							$this->featured_images[ $post_id ] = (int) $value;
 						}
 					}
@@ -922,7 +940,7 @@ class WP_Import extends \WP_Importer {
 	 */
 	private function process_menu_item( $item ) {
 		// Skip draft, orphaned menu items.
-		if ( 'draft' === $item['status'] ) {
+		if ( 'draft' == $item['status'] ) {
 			return;
 		}
 
@@ -930,7 +948,7 @@ class WP_Import extends \WP_Importer {
 		if ( isset( $item['terms'] ) ) {
 			// Loop through terms, assume first nav_menu term is correct menu.
 			foreach ( $item['terms'] as $term ) {
-				if ( 'nav_menu' === $term['domain'] ) {
+				if ( 'nav_menu' == $term['domain'] ) {
 					$menu_slug = $term['slug'];
 					break;
 				}
@@ -959,11 +977,11 @@ class WP_Import extends \WP_Importer {
 		}
 
 		$_menu_item_object_id = $post_meta_key_value['menu_item_object_id'];
-		if ( 'taxonomy' === $post_meta_key_value['_menu_item_type'] && isset( $this->processed_terms[ intval( $_menu_item_object_id ) ] ) ) {
+		if ( 'taxonomy' == $post_meta_key_value['_menu_item_type'] && isset( $this->processed_terms[ intval( $_menu_item_object_id ) ] ) ) {
 			$_menu_item_object_id = $this->processed_terms[ intval( $_menu_item_object_id ) ];
-		} elseif ( 'post_type' === $post_meta_key_value['_menu_item_type'] && isset( $this->processed_posts[ intval( $_menu_item_object_id ) ] ) ) {
+		} elseif ( 'post_type' == $post_meta_key_value['_menu_item_type'] && isset( $this->processed_posts[ intval( $_menu_item_object_id ) ] ) ) {
 			$_menu_item_object_id = $this->processed_posts[ intval( $_menu_item_object_id ) ];
-		} elseif ( 'custom' !== $post_meta_key_value['_menu_item_type'] ) {
+		} elseif ( 'custom' != $post_meta_key_value['_menu_item_type'] ) {
 			// Associated object is missing or not imported yet, we'll retry later.
 			$this->missing_menu_items[] = $item;
 
@@ -1196,7 +1214,7 @@ class WP_Import extends \WP_Importer {
 		$this->url_remap[ $url ] = $upload['url'];
 		$this->url_remap[ $post['guid'] ] = $upload['url']; // r13735, really needed?
 		// Keep track of the destination if the remote url is redirected somewhere else.
-		if ( isset( $headers['x-final-location'] ) && $headers['x-final-location'] !== $url ) {
+		if ( isset( $headers['x-final-location'] ) && $headers['x-final-location'] != $url ) {
 			$this->url_remap[ $headers['x-final-location'] ] = $upload['url'];
 		}
 
@@ -1282,7 +1300,7 @@ class WP_Import extends \WP_Importer {
 			if ( isset( $this->processed_posts[ $value ] ) ) {
 				$new_id = $this->processed_posts[ $value ];
 				// Only update if there's a difference.
-				if ( $new_id !== $value ) {
+				if ( $new_id != $value ) {
 					update_post_meta( $post_id, '_thumbnail_id', $new_id );
 				}
 			}
@@ -1328,9 +1346,5 @@ class WP_Import extends \WP_Importer {
 	public function __construct( $file, $args = [] ) {
 		$this->requested_file_path = $file;
 		$this->args = $args;
-
-		if ( ! empty( $this->args['fetch_attachments'] ) ) {
-			$this->fetch_attachments = true;
-		}
 	}
 }

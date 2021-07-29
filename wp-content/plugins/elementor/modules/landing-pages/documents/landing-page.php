@@ -43,14 +43,6 @@ class Landing_Page extends PageBase {
 	}
 
 	/**
-	 * @access public
-	 * @static
-	 */
-	public static function get_plural_title() {
-		return __( 'Landing Pages', 'elementor' );
-	}
-
-	/**
 	 * Save Document.
 	 *
 	 * Save an Elementor document.
@@ -69,7 +61,7 @@ class Landing_Page extends PageBase {
 			$data['settings']['template'] = Page_Templates_Module::TEMPLATE_CANVAS;
 		}
 
-		return parent::save( $data );
+		parent::save( $data );
 	}
 
 	/**

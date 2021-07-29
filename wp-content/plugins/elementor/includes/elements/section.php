@@ -253,10 +253,10 @@ class Element_Section extends Element_Base {
 			]
 		);
 
-		$this->add_responsive_control(
+		$this->add_control(
 			'content_width',
 			[
-				'label' => __( 'Width', 'elementor' ),
+				'label' => __( 'Content Width', 'elementor' ),
 				'type' => Controls_Manager::SLIDER,
 				'range' => [
 					'px' => [
@@ -270,6 +270,7 @@ class Element_Section extends Element_Base {
 				'condition' => [
 					'layout' => [ 'boxed' ],
 				],
+				'show_label' => false,
 				'separator' => 'none',
 			]
 		);

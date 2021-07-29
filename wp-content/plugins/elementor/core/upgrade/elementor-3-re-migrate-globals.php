@@ -66,7 +66,8 @@ class Elementor_3_Re_Migrate_Globals {
 
 		$callbacks = [];
 
-		$kit = Plugin::$instance->kits_manager->get_active_kit();
+		$active_kit_id = Plugin::$instance->kits_manager->get_active_id();
+		$kit = Plugin::$instance->documents->get( $active_kit_id );
 		// Already exist. use raw settings that doesn't have default values.
 		$meta_key = SettingsPageManager::META_KEY;
 		$kit_raw_settings = $kit->get_meta( $meta_key );

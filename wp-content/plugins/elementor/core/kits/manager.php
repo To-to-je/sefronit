@@ -1,7 +1,6 @@
 <?php
 namespace Elementor\Core\Kits;
 
-use Elementor\Core\Base\Document;
 use Elementor\Core\Kits\Controls\Repeater;
 use Elementor\Core\Kits\Documents\Tabs\Global_Colors;
 use Elementor\Core\Kits\Documents\Tabs\Global_Typography;
@@ -24,49 +23,28 @@ class Manager {
 	const E_HASH_COMMAND_OPEN_SITE_SETTINGS = 'e:run:panel/global/open';
 
 	public function get_active_id() {
-		return get_option( self::OPTION_ACTIVE );
+		$id = get_option( self::OPTION_ACTIVE );
+
+		$kit_document = Plugin::$instance->documents->get( $id );
+
+		if ( ! $kit_document || ! $kit_document instanceof Kit || 'trash' === $kit_document->get_main_post()->post_status ) {
+			$id = $this->create_default();
+			update_option( self::OPTION_ACTIVE, $id );
+		}
+
+		return $id;
 	}
 
 	public function get_active_kit() {
-		$kit = Plugin::$instance->documents->get( $this->get_active_id() );
+		$id = $this->get_active_id();
 
-		if ( ! $this->is_valid_kit( $kit ) ) {
-			return $this->get_empty_kit_instance();
-		}
-
-		return $kit;
+		return Plugin::$instance->documents->get( $id );
 	}
 
 	public function get_active_kit_for_frontend() {
-		$kit = Plugin::$instance->documents->get_doc_for_frontend( $this->get_active_id() );
+		$id = $this->get_active_id();
 
-		if ( ! $this->is_valid_kit( $kit ) ) {
-			return $this->get_empty_kit_instance();
-		}
-
-		return $kit;
-	}
-
-	/**
-	 * @param $kit
-	 *
-	 * @return bool
-	 */
-	private function is_valid_kit( $kit ) {
-		return $kit && $kit instanceof Kit && 'trash' !== $kit->get_main_post()->post_status;
-	}
-
-	/**
-	 * Returns an empty kit for situation when there is no kit in the site.
-	 *
-	 * @return Kit
-	 * @throws \Exception
-	 */
-	private function get_empty_kit_instance() {
-		return new Kit( [
-			'settings' => [],
-			'post_id' => 0,
-		] );
+		return Plugin::$instance->documents->get_doc_for_frontend( $id );
 	}
 
 	/**
@@ -119,38 +97,8 @@ class Manager {
 		return $kit->get_id();
 	}
 
-	public function create_default() {
-		return $this->create( [
-			'post_title' => __( 'Default Kit', 'elementor' ),
-		] );
-	}
-
-	/**
-	 * Create a default kit if needed.
-	 *
-	 * This action runs on activation hook, all the Plugin components do not exists and
-	 * the Document manager and Kits manager instances cannot be used.
-	 *
-	 * @return int|void|\WP_Error
-	 */
-	public static function create_default_kit() {
-		if ( get_option( self::OPTION_ACTIVE ) ) {
-			return;
-		}
-
-		$id = wp_insert_post( [
-			'post_title' => __( 'Default Kit', 'elementor' ),
-			'post_type' => Source_Local::CPT,
-			'post_status' => 'publish',
-			'meta_input' => [
-				'_elementor_edit_mode' => 'builder',
-				Document::TYPE_META_KEY => 'kit',
-			],
-		] );
-
-		update_option( self::OPTION_ACTIVE, $id );
-
-		return $id;
+	private function create_default() {
+		return $this->create( [ 'post_title' => __( 'Default Kit', 'elementor' ) ] );
 	}
 
 	/**

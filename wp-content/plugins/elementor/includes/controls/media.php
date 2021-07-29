@@ -316,8 +316,7 @@ class Control_Media extends Control_Base_Multiple {
 	 */
 	public static function get_image_alt( $instance ) {
 		if ( empty( $instance['id'] ) ) {
-			// For `Insert From URL` images.
-			return isset( $instance['alt'] ) ? trim( strip_tags( $instance['alt'] ) ) : '';
+			return '';
 		}
 
 		$attachment_id = $instance['id'];

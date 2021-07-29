@@ -36,7 +36,7 @@ class Kit extends PageBase {
 		return $properties;
 	}
 
-	public static function get_type() {
+	public function get_name() {
 		return 'kit';
 	}
 
